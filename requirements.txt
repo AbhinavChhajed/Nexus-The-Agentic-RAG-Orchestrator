@@ -1,1 +1,14 @@
+fastapi
+uvicorn
+langgraph
 langchain
+langchain-google-genai
+python-dotenv
+pydantic
+requests
+duckduckgo-search 
+langchain-community
+faiss-cpu 
+pypdf
+pandas 
+pillow
