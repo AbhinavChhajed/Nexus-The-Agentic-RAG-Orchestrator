@@ -13,3 +13,4 @@ pypdf
 pandas 
 pillow
 sentence-transformers
+langchain-experimental
