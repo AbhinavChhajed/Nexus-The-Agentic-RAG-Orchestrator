@@ -4,15 +4,17 @@ from langchain_community.document_loaders import PyPDFLoader
 import pandas as pd
 from PIL import Image
 import base64
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage,SystemMessage
 import mimetypes
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 # from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.embeddings import FastEmbedEmbeddings
 from langchain_core.documents import Document
 import dotenv
 import os
+# Force HuggingFace to avoid using symlinks if possible
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 from langchain_core.tools import tool
 from langgraph.prebuilt import ToolNode
 from langgraph.graph import StateGraph, START, END, MessagesState
@@ -105,7 +107,7 @@ class UniversalLoader:
 universalloader = UniversalLoader(model)
     
 #embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+embeddings = FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
 vector_store = FAISS.from_texts(["Nexus Initialized"], embeddings)
 
@@ -218,8 +220,19 @@ def get_nexus_response(user_prompt: str, files: list = None):
         else:
             user_prompt = f"User Question: {user_prompt}"
 
+        system_instruction = SystemMessage(content="""
+        You are Nexus, an advanced AI with file-reading capabilities.
+        
+        CRITICAL RULES:
+        1. You have a tool named 'retrieve_documents'.
+        2. IF the user asks about "the file", "uploaded documents", or content you don't know:
+           YOU MUST USE 'retrieve_documents' to look it up.
+        3. DO NOT say "I cannot access files". You HAVE the tool. Use it.
+        4. If the tool returns text, assume it is the correct content of the file.
+        """)
+
         config = {"configurable": {"thread_id": "1"}}
-        inputs = {"messages": [HumanMessage(content=user_prompt)]}
+        inputs = {"messages": [system_instruction,HumanMessage(content=user_prompt)]}
         result_state = app.invoke(inputs,config=config)
         last_message = result_state['messages'][-1]
         content = last_message.content

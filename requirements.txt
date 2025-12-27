@@ -12,5 +12,6 @@ faiss-cpu
 pypdf
 pandas 
 pillow
-sentence-transformers
+//sentence-transformers
 langchain-experimental
+fastembed
