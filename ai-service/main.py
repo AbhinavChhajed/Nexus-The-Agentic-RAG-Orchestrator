@@ -6,9 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 from dotenv import load_dotenv
+import uuid
 
 # Import your AI logic
-from ai_logic import get_nexus_response
+from ai_logic import get_nexus_response,get_thread_history,get_all_threads
 
 # 1. Load Environment Variables
 load_dotenv()
@@ -32,6 +33,7 @@ app.add_middleware(
 # Define the request body for Chat
 class ChatRequest(BaseModel):
     prompt: str
+    thread_id:str
 
 @app.post("/upload")
 async def upload(files: Optional[List[UploadFile]] = File(...)):
@@ -50,8 +52,26 @@ async def upload(files: Optional[List[UploadFile]] = File(...)):
         
     return {"message": "Files saved successfully", "filenames": saved_filenames}
 
+@app.get("/history")
+async def get_history():
+    threads = get_all_threads()
+    return [{"id":tid,"title":f"chat{tid[:8]}..."} for tid in threads]
+
+@app.get("/history/{thread_id}")
+async def get_chat_session(thread_id: str):
+    """Returns the messages for a specific thread."""
+    messages = get_thread_history(thread_id)
+    return {"messages": messages}
+
+
 @app.post("/chat")
 async def chat_endpoint(data: ChatRequest):
+    thread_id = data.thread_id
+    if not thread_id or thread_id == 'new':
+        thread_id = str(uuid.uuid4())
+
+    
+
     user_prompt = data.prompt
     
     files = []
@@ -62,9 +82,9 @@ async def chat_endpoint(data: ChatRequest):
             if os.path.isfile(os.path.join(UPLOAD_DIR, f))
         ]
     
-    result = get_nexus_response(user_prompt, files=files)
+    result = get_nexus_response(user_prompt=user_prompt, thread_id=thread_id, files=files)
     
-    return {"response": result}
+    return {"response": result, "thread_id":thread_id}
 
 
 if __name__ == "__main__":

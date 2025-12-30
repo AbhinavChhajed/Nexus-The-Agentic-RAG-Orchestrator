@@ -4,7 +4,7 @@ from langchain_community.document_loaders import PyPDFLoader
 import pandas as pd
 from PIL import Image
 import base64
-from langchain_core.messages import HumanMessage,SystemMessage
+from langchain_core.messages import HumanMessage,SystemMessage,ToolMessage
 import mimetypes
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
@@ -24,6 +24,8 @@ from langchain_core.tools import tool
 from langchain_experimental.utilities import PythonREPL
 from typing import Literal
 from langgraph.checkpoint.memory import MemorySaver
+import sqlite3
+from langgraph.checkpoint.sqlite import SqliteSaver
 dotenv.load_dotenv()
 
 model = ChatGoogleGenerativeAI(model="gemini-2.5-flash",temperature = 0)
@@ -201,12 +203,72 @@ workflow.add_edge(START, "agent")
 workflow.add_conditional_edges("agent", should_continue)
 workflow.add_edge("tools", "agent")
 
-memory = MemorySaver()
+# memory = MemorySaver()
+db_connection = sqlite3.connect("nexus_memory.db",check_same_thread=False)
+memory = SqliteSaver(db_connection)
 app = workflow.compile(checkpointer=memory)
 
 print("Prototype Complete. Ready to migrate to Backend.")
 
-def get_nexus_response(user_prompt: str, files: list = None):
+def get_all_threads():
+    """
+    Query all existing thread IDs from the memory database.
+    """
+    cursor = db_connection.cursor()
+    try:
+        cursor.execute("SELECT DISTINCT thread_id FROM checkpoints")
+        threads = [row[0] for row in cursor.fetchall()]
+        return threads
+    except Exception as e:
+        print(f"Error retrieving threads: {e}")
+        return []
+
+def get_thread_history(thread_id: str):
+    """
+    Fetch message history, filtering out internal Tool outputs, 
+    System messages, and EMPTY AI tool-call requests.
+    """
+    config = {"configurable": {"thread_id": thread_id}}
+    state = app.get_state(config)
+    
+    if not state.values:
+        return []
+
+    messages = state.values.get("messages", [])
+    history = []
+    
+    for msg in messages:
+        # 1. Skip System Messages and Tool Outputs (Search results)
+        if isinstance(msg, SystemMessage) or isinstance(msg, ToolMessage):
+            continue
+        
+        # 2. CRITICAL FIX: Skip AI Messages that are just Tool Calls (Empty Content)
+        # If the AI is asking to use a tool, 'content' is often empty or null.
+        if not msg.content or not str(msg.content).strip():
+            continue
+            
+        role = "user" if isinstance(msg, HumanMessage) else "Nexus"
+        
+        # 3. Clean up Content (Handle Google's complex JSON format)
+        content = msg.content
+        
+        if isinstance(content, list):
+            text_parts = []
+            for part in content:
+                if isinstance(part, dict):
+                    text_parts.append(part.get("text", ""))
+                else:
+                    text_parts.append(str(part))
+            content = "\n".join(text_parts)
+            
+        history.append({
+            "role": role,
+            "content": content
+        })
+        
+    return history
+
+def get_nexus_response(user_prompt: str, thread_id: str, files: list = None):
     """
     This function handles the AI logic.
     Currently, it processes text. Later, we will add RAG (File) support here.
@@ -231,7 +293,7 @@ def get_nexus_response(user_prompt: str, files: list = None):
         4. If the tool returns text, assume it is the correct content of the file.
         """)
 
-        config = {"configurable": {"thread_id": "1"}}
+        config = {"configurable": {"thread_id": thread_id}}
         inputs = {"messages": [system_instruction,HumanMessage(content=user_prompt)]}
         result_state = app.invoke(inputs,config=config)
         last_message = result_state['messages'][-1]

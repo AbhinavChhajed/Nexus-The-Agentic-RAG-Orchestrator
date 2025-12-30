@@ -1,74 +1,122 @@
 import "../App.css";
-import { useState,} from "react";
+import { useState, useEffect } from "react";
 
+// 1. Define the specific shape of a "Text Object" from LangChain
+interface TextContentObj {
+    type?: string;
+    text: string;
+    [key: string]: unknown; // Allow other extra keys safely
+}
+
+// 2. Define the incoming message shape (String OR Object)
+interface BackendMessage {
+  role: string;
+  content: string | TextContentObj; // It can be a simple string or an object
+}
+
+interface HistoryResponse {
+  messages: BackendMessage[];
+}
+
+// 3. Your Internal Frontend Message Type
 interface Message {
   role: "user" | "Nexus";
   content: string;
 }
 
-function ChatArea() {
+interface ChatAreaProps {
+  threadId: string | null;
+  onThreadCreated: (newId: string) => void;
+}
+
+function ChatArea({ threadId, onThreadCreated }: ChatAreaProps) {
   const [files, setFiles] = useState<File[]>([]);
   const [prompt, setPrompt] = useState<string>("");
-
-  const [messages, setmessages] = useState<Message[]>([
+  
+  // Initialize with a default. 
+  // Because the parent uses a 'key', this resets AUTOMATICALLY on chat switch.
+  const [messages, setMessages] = useState<Message[]>([
     { role: "Nexus", content: "Hello. I am ready to help." },
   ]);
 
+  useEffect(() => {
+    if (!threadId) return;
+
+    fetch(`http://localhost:8000/history/${threadId}`)
+      .then((res) => res.json())
+      .then((data: HistoryResponse) => { // Strictly typed response
+        if (data.messages && data.messages.length > 0) {
+          
+          const formatted: Message[] = data.messages.map((m) => {
+            let textContent = "";
+
+            // Type Guard: Check if content is a simple string
+            if (typeof m.content === "string") {
+              textContent = m.content;
+            } 
+            // Type Guard: Check if content is an object (and not null)
+            else if (typeof m.content === "object" && m.content !== null) {
+               // Now TypeScript knows it's a TextContentObj
+               // We access .text safely
+               if ('text' in m.content) {
+                   textContent = (m.content as TextContentObj).text;
+               } else {
+                   // Fallback for weird objects
+                   textContent = JSON.stringify(m.content);
+               }
+            } 
+            else {
+               textContent = String(m.content);
+            }
+
+            return {
+              role: m.role === "human" ? "user" : "Nexus",
+              content: textContent,
+            };
+          });
+
+          setMessages(formatted);
+        }
+      })
+      .catch((e) => console.error(e));
+  }, [threadId]);
+
   const upload = async () => {
     if (files.length === 0) return;
-
     const formData = new FormData();
-    files.forEach((file) => {
-      formData.append("files", file); // MUST match FastAPI param
-    });
-
-    const res = await fetch("http://localhost:8000/upload", {
-      method: "POST",
-      body: formData,
-    });
-
-    const data = await res.json();
-    console.log(data);
+    files.forEach((file) => formData.append("files", file));
+    await fetch("http://localhost:8000/upload", { method: "POST", body: formData });
   };
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files) return;
-    setFiles(Array.from(e.target.files));
-  };
-
-  const handlePromptChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setPrompt(e.target.value);
+    if (e.target.files) setFiles(Array.from(e.target.files));
   };
 
   const handleSend = async () => {
     if (prompt.trim() === "") return;
-
     const current_prompt = prompt;
-
-    setmessages((perv) => [...perv, { role: "user", content: current_prompt }]);
+    
+    setMessages((prev) => [...prev, { role: "user", content: current_prompt }]);
     setPrompt("");
 
     try {
       const res = await fetch("http://localhost:8000/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ prompt: current_prompt }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+            prompt: current_prompt,
+            thread_id: threadId || "new" 
+        }),
       });
 
       const data = await res.json();
 
-      setmessages((prev) => [
-        ...prev,
-        { role: "Nexus", content: data.response },
-      ]);
+      if (!threadId || threadId !== data.thread_id) {
+        onThreadCreated(data.thread_id);
+      }
+      setMessages((prev) => [...prev, { role: "Nexus", content: data.response }]);
     } catch (error) {
       console.error("Chat Error:", error);
-      setmessages((prev) => [
-        ...prev,
-        { role: "Nexus", content: "Error: Could not reach backend." },
-      ]);
     }
   };
 
@@ -76,33 +124,25 @@ function ChatArea() {
     <main className="chat-area">
       <div className="messages-container">
         {messages.map((msg, index) => (
-          <div
-            key={index}
-            className={`message-wrapper ${
-              msg.role === "user" ? "User" : "Nexus"
-            }`}
-          >
+          <div key={index} className={`message-wrapper ${msg.role === "user" ? "User" : "Nexus"}`}>
             <strong className="message-sender">{msg.role}:</strong>
             <p className="message-text">{msg.content}</p>
           </div>
         ))}
       </div>
-
       <div className="input-section">
         <input
           className="chat-input"
           type="text"
           placeholder="Send a message..."
           value={prompt}
-          onChange={handlePromptChange}
+          onChange={(e) => setPrompt(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
         />
-        <button className="send-btn" onClick={handleSend}>
-          Send
-        </button>
-
-        <div>
-          <input type="file" multiple onChange={handleFile} />
-          <button onClick={upload}>Upload Files</button>
+        <button className="send-btn" onClick={handleSend}>Send</button>
+        <div className="upload-controls">
+           <input type="file" multiple onChange={handleFile} />
+           <button onClick={upload}>Upload</button>
         </div>
       </div>
     </main>
