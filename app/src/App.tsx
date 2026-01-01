@@ -1,6 +1,6 @@
 import { useState } from "react";
-import SideBar from "./components/Sidebar"; // Adjust path as needed
-import ChatArea from "./components/ChatArea"; // Adjust path as needed
+import SideBar from "./components/Sidebar";
+import ChatArea from "./components/ChatArea";
 import "./App.css";
 
 function App() {
@@ -18,20 +18,15 @@ function App() {
 
   return (
     <div className="app-container">
-      <SideBar 
-        onSelectChat={setActiveThreadId} 
-        onNewChat={handleNewChat} 
+      <SideBar
+        onSelectChat={setActiveThreadId}
+        onNewChat={handleNewChat}
         refreshTrigger={refreshSidebar}
       />
-      
-      {/* CRITICAL FIX: 
-         key={activeThreadId} ensures ChatArea is re-mounted cleanly 
-         on every chat switch. 
-      */}
-      <ChatArea 
-        key={activeThreadId || "new"} 
-        threadId={activeThreadId} 
-        onThreadCreated={handleThreadCreated} 
+      <ChatArea
+        key={activeThreadId || "new"}
+        threadId={activeThreadId}
+        onThreadCreated={handleThreadCreated}
       />
     </div>
   );

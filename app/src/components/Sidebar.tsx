@@ -14,29 +14,48 @@ interface SidebarProps {
 
 function SideBar({ onSelectChat, onNewChat, refreshTrigger }: SidebarProps) {
   const [history, setHistory] = useState<ChatSession[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
 
   useEffect(() => {
     fetch("http://localhost:8000/history")
-      .then((res) => {
-        if (!res.ok) {
-            throw new Error(`Server error: ${res.status}`);
-        }
-        return res.json();
-      })
+      .then((res) => (res.ok ? res.json() : []))
       .then((data) => {
-        // SAFETY CHECK: Only set state if data is actually an array
-        if (Array.isArray(data)) {
-          setHistory(data);
-        } else {
-          console.error("Expected array but got:", data);
-          setHistory([]); // Fallback to empty list to prevent crash
-        }
+        if (Array.isArray(data)) setHistory(data);
       })
-      .catch((err) => {
-        console.error("Failed to load history:", err);
-        setHistory([]); // Fallback on error
-      });
+      .catch(() => setHistory([]));
   }, [refreshTrigger]);
+
+  const handleDoubleClick = (chat: ChatSession) => {
+    setEditingId(chat.id);
+    setEditValue(chat.title);
+  };
+
+  const handleRename = async () => {
+    if (!editingId || !editValue.trim()) {
+      setEditingId(null);
+      return;
+    }
+
+    setHistory((prev) =>
+      prev.map((chat) =>
+        chat.id === editingId ? { ...chat, title: editValue } : chat
+      )
+    );
+
+    await fetch("http://localhost:8000/rename", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread_id: editingId, title: editValue }),
+    });
+
+    setEditingId(null);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleRename();
+    if (e.key === "Escape") setEditingId(null);
+  };
 
   return (
     <aside className="sidebar">
@@ -47,23 +66,29 @@ function SideBar({ onSelectChat, onNewChat, refreshTrigger }: SidebarProps) {
       </div>
       <div className="history-section">
         <ul className="history-list">
-          {/* SAFETY CHECK: Ensure history exists and is an array before mapping */}
-          {Array.isArray(history) && history.map((chat) => (
-            <li
-              key={chat.id}
-              className="history-item"
-              onClick={() => onSelectChat(chat.id)}
-            >
-              {chat.title}
-            </li>
-          ))}
-          
-          {/* Optional: Show message if list is empty */}
-          {Array.isArray(history) && history.length === 0 && (
-            <li style={{ padding: "10px", color: "#666", fontSize: "0.8rem" }}>
-              No previous chats
-            </li>
-          )}
+          {Array.isArray(history) &&
+            history.map((chat) => (
+              <li
+                key={chat.id}
+                className="history-item"
+                onClick={() => onSelectChat(chat.id)}
+                onDoubleClick={() => handleDoubleClick(chat)}
+              >
+                {editingId === chat.id ? (
+                  <input
+                    type="text"
+                    autoFocus
+                    className="rename-input"
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onBlur={handleRename}
+                    onKeyDown={handleKeyDown}
+                  />
+                ) : (
+                  <span>{chat.title}</span>
+                )}
+              </li>
+            ))}
         </ul>
       </div>
     </aside>

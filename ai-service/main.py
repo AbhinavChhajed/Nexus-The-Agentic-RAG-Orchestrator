@@ -7,21 +7,14 @@ from pydantic import BaseModel
 from typing import List, Optional
 from dotenv import load_dotenv
 import uuid
-
-# Import your AI logic
-from ai_logic import get_nexus_response,get_thread_history,get_all_threads
-
-# 1. Load Environment Variables
+from ai_logic import get_nexus_response,get_thread_history,get_all_threads,save_chat_title,get_chat_title
 load_dotenv()
 
-# 2. Initialize FastAPI
 app = FastAPI(title="Nexus AI Backend")
 
-# 3. Setup Upload Directory (Where files will be saved)
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# 4. ENABLE CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -30,10 +23,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Define the request body for Chat
 class ChatRequest(BaseModel):
     prompt: str
     thread_id:str
+
+class RenameRequest(BaseModel):
+    thread_id: str
+    title: str
+
+@app.post("/rename")
+async def rename_chat(data: RenameRequest):
+    save_chat_title(data.thread_id, data.title)
+    return {"message": "Title updated"}
 
 @app.post("/upload")
 async def upload(files: Optional[List[UploadFile]] = File(...)):
@@ -55,7 +56,15 @@ async def upload(files: Optional[List[UploadFile]] = File(...)):
 @app.get("/history")
 async def get_history():
     threads = get_all_threads()
-    return [{"id":tid,"title":f"chat{tid[:8]}..."} for tid in threads]
+    history_list = []
+    
+    for tid in threads:
+        saved_title = get_chat_title(tid)
+        display_title = saved_title if saved_title else f"Chat {tid[:8]}"
+        history_list.append({"id": tid, "title": display_title})
+    
+    return history_list[::-1]
+
 
 @app.get("/history/{thread_id}")
 async def get_chat_session(thread_id: str):
@@ -70,7 +79,6 @@ async def chat_endpoint(data: ChatRequest):
     if not thread_id or thread_id == 'new':
         thread_id = str(uuid.uuid4())
 
-    
 
     user_prompt = data.prompt
     

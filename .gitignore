@@ -1,2 +1,4 @@
 .env
 /ai-service/uploads/*
+/ai-service/*.db
+/ai-service/__pycache__/*

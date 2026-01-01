@@ -13,7 +13,6 @@ from langchain_community.embeddings import FastEmbedEmbeddings
 from langchain_core.documents import Document
 import dotenv
 import os
-# Force HuggingFace to avoid using symlinks if possible
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 from langchain_core.tools import tool
 from langgraph.prebuilt import ToolNode
@@ -23,7 +22,7 @@ import json
 from langchain_core.tools import tool
 from langchain_experimental.utilities import PythonREPL
 from typing import Literal
-from langgraph.checkpoint.memory import MemorySaver
+# from langgraph.checkpoint.memory import MemorySaver
 import sqlite3
 from langgraph.checkpoint.sqlite import SqliteSaver
 dotenv.load_dotenv()
@@ -38,12 +37,11 @@ class UniversalLoader:
         """
         Traffic Controller: Routes files to the correct reader.
         """
-        # 1. Get extension and mime type
+       
         _, ext = os.path.splitext(file_path)
         ext = ext.lower()
         mime_type, _ = mimetypes.guess_type(file_path)
         
-        # 2. DEFINE CODE EXTENSIONS (Treat these as text)
         code_extensions = {'.py', '.js', '.ts', '.html', '.css', '.java', '.cpp', '.c', '.h', '.sql', '.md', '.json', '.xml', '.yaml', '.yml', '.txt'}
 
         if ext in code_extensions:
@@ -66,7 +64,6 @@ class UniversalLoader:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
-            # Wrap in markdown so LLM knows it's code
             lang_map = {'.py': 'python', '.js': 'javascript', '.ts': 'typescript', '.html': 'html', '.sql': 'sql', '.css': 'css'}
             language = lang_map.get(ext, '')
             return f"```{language}\n{content}\n```"
@@ -122,17 +119,12 @@ def index_files(file_paths):
     for path in file_paths:
         print(f"Loading: {path}...")
         
-        # Extract Text using your UniversalLoader
         raw_content = universalloader.process_file(path)
-        
-        # Convert to Document
         doc = Document(page_content=raw_content, metadata={"source": path})
         all_documents.append(doc)
         
-    # Split into chunks
     splits = text_splitter.split_documents(all_documents)
     
-    # Add to Vector Store
     if splits:
         vector_store.add_documents(splits)
         print(f"Successfully indexed {len(splits)} chunks locally!")
@@ -181,20 +173,16 @@ def should_continue(state: MessagesState) -> str:
     # Otherwise, stop
     return END
 
-# 1. The Approved Tools
 tools = [search_tool, retrieve_documents, python_interpreter]
 
-# 2. Bind Tools to Model
 model = model.bind_tools(tools)
 tool_node = ToolNode(tools)
 
-# 3. Define the Agent Logic
 def call_model(state: MessagesState):
     messages = state['messages']
     response = model.invoke(messages)
     return {"messages": [response]}
 
-# 4. Build the Graph
 workflow = StateGraph(MessagesState)
 workflow.add_node("agent", call_model)
 workflow.add_node("tools", tool_node)
@@ -208,7 +196,31 @@ db_connection = sqlite3.connect("nexus_memory.db",check_same_thread=False)
 memory = SqliteSaver(db_connection)
 app = workflow.compile(checkpointer=memory)
 
-print("Prototype Complete. Ready to migrate to Backend.")
+def init_title_db():
+    with sqlite3.connect("nexus.db", check_same_thread=False) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS chat_titles (
+                thread_id TEXT PRIMARY KEY,
+                title TEXT
+            )
+        """)
+        conn.commit()
+
+init_title_db()
+
+def save_chat_title(thread_id: str, title: str):
+    with sqlite3.connect("nexus.db", check_same_thread=False) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO chat_titles (thread_id, title) VALUES (?, ?)",
+            (thread_id, title)
+        )
+        conn.commit()
+
+def get_chat_title(thread_id: str):
+    with sqlite3.connect("nexus.db", check_same_thread=False) as conn:
+        cursor = conn.execute("SELECT title FROM chat_titles WHERE thread_id = ?", (thread_id,))
+        result = cursor.fetchone()
+        return result[0] if result else None
 
 def get_all_threads():
     """
@@ -238,18 +250,13 @@ def get_thread_history(thread_id: str):
     history = []
     
     for msg in messages:
-        # 1. Skip System Messages and Tool Outputs (Search results)
         if isinstance(msg, SystemMessage) or isinstance(msg, ToolMessage):
             continue
         
-        # 2. CRITICAL FIX: Skip AI Messages that are just Tool Calls (Empty Content)
-        # If the AI is asking to use a tool, 'content' is often empty or null.
         if not msg.content or not str(msg.content).strip():
             continue
             
         role = "user" if isinstance(msg, HumanMessage) else "Nexus"
-        
-        # 3. Clean up Content (Handle Google's complex JSON format)
         content = msg.content
         
         if isinstance(content, list):
@@ -302,18 +309,15 @@ def get_nexus_response(user_prompt: str, thread_id: str, files: list = None):
         if isinstance(content, list):
             text_parts = []
             for part in content:
-                # Extract 'text' if it exists, otherwise convert whole part to string
                 if isinstance(part, dict):
                     text_parts.append(part.get('text', str(part)))
                 else:
                     text_parts.append(str(part))
             return "\n".join(text_parts)
         
-        # Case B: Content is already a string
         if isinstance(content, str):
             return content
             
-        # Case C: Fallback
         return str(content)
         
     except Exception as e:

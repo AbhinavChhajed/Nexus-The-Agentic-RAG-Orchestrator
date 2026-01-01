@@ -1,24 +1,21 @@
 import "../App.css";
 import { useState, useEffect } from "react";
 
-// 1. Define the specific shape of a "Text Object" from LangChain
 interface TextContentObj {
     type?: string;
     text: string;
-    [key: string]: unknown; // Allow other extra keys safely
+    [key: string]: unknown;
 }
 
-// 2. Define the incoming message shape (String OR Object)
 interface BackendMessage {
   role: string;
-  content: string | TextContentObj; // It can be a simple string or an object
+  content: string | TextContentObj; 
 }
 
 interface HistoryResponse {
   messages: BackendMessage[];
 }
 
-// 3. Your Internal Frontend Message Type
 interface Message {
   role: "user" | "Nexus";
   content: string;
@@ -33,8 +30,6 @@ function ChatArea({ threadId, onThreadCreated }: ChatAreaProps) {
   const [files, setFiles] = useState<File[]>([]);
   const [prompt, setPrompt] = useState<string>("");
   
-  // Initialize with a default. 
-  // Because the parent uses a 'key', this resets AUTOMATICALLY on chat switch.
   const [messages, setMessages] = useState<Message[]>([
     { role: "Nexus", content: "Hello. I am ready to help." },
   ]);
@@ -44,24 +39,19 @@ function ChatArea({ threadId, onThreadCreated }: ChatAreaProps) {
 
     fetch(`http://localhost:8000/history/${threadId}`)
       .then((res) => res.json())
-      .then((data: HistoryResponse) => { // Strictly typed response
+      .then((data: HistoryResponse) => { 
         if (data.messages && data.messages.length > 0) {
           
           const formatted: Message[] = data.messages.map((m) => {
             let textContent = "";
 
-            // Type Guard: Check if content is a simple string
             if (typeof m.content === "string") {
               textContent = m.content;
             } 
-            // Type Guard: Check if content is an object (and not null)
             else if (typeof m.content === "object" && m.content !== null) {
-               // Now TypeScript knows it's a TextContentObj
-               // We access .text safely
                if ('text' in m.content) {
                    textContent = (m.content as TextContentObj).text;
                } else {
-                   // Fallback for weird objects
                    textContent = JSON.stringify(m.content);
                }
             } 
