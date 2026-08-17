@@ -1,18 +1,30 @@
+# ── Core Framework ───────────────────────────────────────────────────────
 fastapi
 uvicorn
-langgraph
-langchain
-langchain-google-genai
-python-dotenv
 pydantic
-requests
-duckduckgo-search 
+pydantic-settings
+
+# ── LangChain / LangGraph ───────────────────────────────────────────────
+langchain
+langchain-core
 langchain-community
-faiss-cpu 
-pypdf
-pandas 
-pillow
-//sentence-transformers
+langchain-google-genai
 langchain-experimental
-fastembed
+langgraph
 langgraph-checkpoint-sqlite
+
+# ── RAG & Embeddings ────────────────────────────────────────────────────
+faiss-cpu
+fastembed
+pypdf
+
+# ── Tools & Utilities ───────────────────────────────────────────────────
+duckduckgo-search
+ddgs
+requests
+python-dotenv
+python-multipart
+
+# ── Data Processing ─────────────────────────────────────────────────────
+pandas
+pillow

@@ -1,4 +1,15 @@
+# ── Environment ──────────────────────────────────────────────────────────
 .env
-/ai-service/uploads/*
+
+# ── Python ───────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+/ai-service/venv/
+
+# ── AI Service runtime artifacts ────────────────────────────────────────
+/ai-service/uploads/
 /ai-service/*.db
-/ai-service/__pycache__/*
+
+# ── Node ─────────────────────────────────────────────────────────────────
+node_modules/
